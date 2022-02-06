@@ -50,8 +50,8 @@ git clone https://github.com/pimoroni/pimoroni-pico
 ## Clone this boilerplate
 
 ```
-git clone https://github.com/pimoroni/pico-boilerplate
-cd pico-boilerplate
+git clone https://github.com/hardillb/lora-sensor-pico --recurse-submodules
+cd lora-sensor-pico
 ```
 
 If you have not or don't want to set `PICO_SDK_PATH` you can edit `.vscode/settings.json` to pass the path directly to CMake.
