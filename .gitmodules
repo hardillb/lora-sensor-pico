@@ -1,0 +1,3 @@
+[submodule "lib/pico-lorawan"]
+	path = lib/pico-lorawan
+	url = https://github.com/waveshareteam/pico-lorawan.git
