@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "pico/stdlib.h"
 
+// #include "pico/lorawan.h"
+extern "C" {
 #include "pico/lorawan.h"
+}
 
 #include "bme280.hpp"
 #include "common/pimoroni_i2c.hpp"
@@ -10,6 +14,9 @@
 #include "tusb.h"
 
 #include "config.h"
+
+#define hiByte(i) (i & 0xff00)>>8
+#define lowByte(i) (i & 0xff)
 
 using namespace pimoroni;
 
@@ -39,9 +46,12 @@ int receive_length = 0;
 uint8_t receive_buffer[242];
 uint8_t receive_port = 0;
 
+uint16_t payload[4];
+
 I2C i2c(BOARD::BREAKOUT_GARDEN);
 BME280 bme280(&i2c);
 
+uint16_t f2sflt16(float f);
 
 int main() {
     stdio_init_all();
@@ -78,13 +88,24 @@ int main() {
         BME280::bme280_reading result = bme280.read_forced();
         printf("%s %0.2lf deg C, %0.2lf hPa, %0.2lf%%\n", result.status == BME280_OK ? "OK" : "ER", result.temperature, result.pressure, result.humidity);
 
+        float temp_f = result.temperature/100;
+        float humidity_f = result.humidity/100;
+
+        uint16_t temp_i = f2sflt16(temp_f);
+        uint16_t humidity_i = f2sflt16(humidity_f);
+
+        payload[0] = lowByte(temp_i);
+        payload[1] = hiByte(temp_i);
+
+        payload[2] = lowByte(humidity_i);
+        payload[3] = hiByte(humidity_i);
 
         // send the temperature and humitity byte in an unconfirmed uplink message
-        // if (lorawan_send_unconfirmed(&adc_temperature_byte, sizeof(adc_temperature_byte), 2) < 0) {
-        //     printf("failed!!!\n");
-        // } else {
-        //     printf("success!\n");
-        // }
+        if (lorawan_send_unconfirmed(&payload, sizeof(payload), 1) < 0) {
+            printf("failed!!!\n");
+        } else {
+            printf("success!\n");
+        }
 
          // wait for up to 30 seconds for an event
         if (lorawan_process_timeout_ms(30000) == 0) {
@@ -103,4 +124,54 @@ int main() {
 
   return 0;
 
+}
+
+uint16_t f2sflt16(float f)
+{
+    if (f <= -1.0)
+        return 0xFFFF;
+    else if (f >= 1.0)
+        return 0x7FFF;
+    else
+    {
+        int iExp;
+        float normalValue;
+        uint16_t sign;
+
+        normalValue = frexpf(f, &iExp);
+
+        sign = 0;
+        if (normalValue < 0)
+        {
+            // set the "sign bit" of the result
+            // and work with the absolute value of normalValue.
+            sign = 0x8000;
+            normalValue = -normalValue;
+        }
+
+        // abs(f) is supposed to be in [0..1), so useful exp
+        // is [0..-15]
+        iExp += 15;
+        if (iExp < 0)
+            iExp = 0;
+
+        // bit 15 is the sign
+        // bits 14..11 are the exponent
+        // bits 10..0 are the fraction
+        // we conmpute the fraction and then decide if we need to round.
+        uint16_t outputFraction = ldexpf(normalValue, 11) + 0.5;
+        if (outputFraction >= (1 << 11u))
+        {
+            // reduce output fraction
+            outputFraction = 1 << 10;
+            // increase exponent
+            ++iExp;
+        }
+
+        // check for overflow and return max instead.
+        if (iExp > 15)
+            return 0x7FFF | sign;
+
+        return (uint16_t)(sign | (iExp << 11u) | outputFraction);
+    }
 }
